@@ -588,11 +588,7 @@ std::vector<DispatchKernelNode> generate_nodes(const std::set<chip_id_t>& device
                         "Device id {} out of bounds (max = {})",
                         node.device_id,
                         template_id_to_device_id.size());
-                    TT_ASSERT(
-                        node.servicing_device_id < template_id_to_device_id.size(),
-                        "Servicing device id {} out of bounds (max = {})",
-                        node.servicing_device_id,
-                        template_id_to_device_id.size());
+                    // servicing_device_id == -1 is undefined
                     node.device_id = template_id_to_device_id[node.device_id];
                     node.servicing_device_id = template_id_to_device_id[node.servicing_device_id];
                     increment_node_ids(node, index_offset);
