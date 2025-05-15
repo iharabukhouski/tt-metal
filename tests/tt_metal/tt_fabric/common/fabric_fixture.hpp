@@ -102,7 +102,12 @@ void RunTestUnicastRaw(
 void RunTestUnicastConnAPI(
     BaseFabricFixture* fixture, uint32_t num_hops = 1, RoutingDirection direction = RoutingDirection::E);
 
-void RunTestMCastConnAPI(BaseFabricFixture* fixture);
+void RunTestMCastConnAPI(
+    BaseFabricFixture* fixture,
+    RoutingDirection fwd_dir = RoutingDirection::W,
+    uint32_t fwd_hops = 1,
+    RoutingDirection bwd_dir = RoutingDirection::E,
+    uint32_t bwd_hops = 1);
 
 bool find_device_with_neighbor_in_multi_direction(
     BaseFabricFixture* fixture,
