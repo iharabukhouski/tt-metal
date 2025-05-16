@@ -1205,8 +1205,8 @@ public:
                             program, DISPATCH_DATA_BINARY, write_length, kg_transfer_info.riscvs[kernel_idx]);
                         kernel_config_buffer_offset += write_length;
 
-                        if (not this->program_in_cache_sizeB) {
-                            auto prefetch_subcmds =
+                        if (this->program_in_cache_sizeB == 0) {
+                            auto& prefetch_subcmds =
                                 kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayPagedPackedSubCmd>();
                             prefetch_subcmds.emplace_back(CQPrefetchRelayPagedPackedSubCmd{
                                 .start_page = (uint16_t)page_offset,
@@ -1214,7 +1214,7 @@ public:
                                 .base_addr = base_address,
                                 .length = read_length});
                         } else {
-                            auto prefetch_subcmds =
+                            auto& prefetch_subcmds =
                                 kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayRingbufferSubCmd>();
                             // start address for kernel bin is aligned with page boundary, consistent with the
                             // non-cached case
@@ -1229,16 +1229,16 @@ public:
             }
         }
 
-        if (this->program_in_cache_sizeB) {
+        if (this->program_in_cache_sizeB > 0) {
             for (auto& kernel_bins_cmd : kernel_bins_cmds) {
                 calculator.add_dispatch_write_packed_large(kernel_bins_cmd.dispatch_subcmds.size());
-                auto prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayRingbufferSubCmd>();
+                auto& prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayRingbufferSubCmd>();
                 calculator.add_prefetch_relay_ringbuffer(prefetch_subcmds.size());
             }
         } else {
             for (auto& kernel_bins_cmd : kernel_bins_cmds) {
                 calculator.add_dispatch_write_packed_large(kernel_bins_cmd.dispatch_subcmds.size());
-                auto prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayPagedPackedSubCmd>();
+                auto& prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayPagedPackedSubCmd>();
                 calculator.add_prefetch_relay_paged_packed(prefetch_subcmds.size());
             }
         }
@@ -1262,11 +1262,11 @@ public:
                 kernel_bins_cmd.dispatch_subcmds,
                 0,
                 DISPATCH_WRITE_OFFSET_TENSIX_L1_CONFIG_BASE);
-            if (this->program_in_cache_sizeB) {
-                auto prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayRingbufferSubCmd>();
+            if (this->program_in_cache_sizeB > 0) {
+                auto& prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayRingbufferSubCmd>();
                 device_command_sequence.add_prefetch_relay_ringbuffer(prefetch_subcmds.size(), prefetch_subcmds);
             } else {
-                auto prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayPagedPackedSubCmd>();
+                auto& prefetch_subcmds = kernel_bins_cmd.get_prefetch_subcmds<CQPrefetchRelayPagedPackedSubCmd>();
                 device_command_sequence.add_prefetch_relay_paged_packed(
                     kernel_bins_cmd.data_aligned_sizeB, prefetch_subcmds, prefetch_subcmds.size());
             }
@@ -1277,17 +1277,17 @@ private:
     size_t program_in_cache_sizeB{0};
 
     struct KernelBinsCmds {
-        std::variant<std::vector<CQPrefetchRelayPagedPackedSubCmd>, std::vector<CQPrefetchRelayRingbufferSubCmd>>
+        std::pair<std::vector<CQPrefetchRelayPagedPackedSubCmd>, std::vector<CQPrefetchRelayRingbufferSubCmd>>
             prefetch_subcmds;
         std::vector<CQDispatchWritePackedLargeSubCmd> dispatch_subcmds;
         uint32_t data_aligned_sizeB{0};
 
         template <class T>
-        std::vector<T> get_prefetch_subcmds() {
+        std::vector<T>& get_prefetch_subcmds() {
             return std::get<std::vector<T>>(prefetch_subcmds);
         }
         template <class T>
-        std::vector<T> get_prefetch_subcmds() const {
+        const std::vector<T>& get_prefetch_subcmds() const {
             return std::get<std::vector<T>>(prefetch_subcmds);
         }
     };
@@ -1739,7 +1739,11 @@ void assemble_device_commands(
         program_transfer_info, prefetcher_cache_sizeB);
     DeviceCommandCalculator program_binary_calculator;
     if (program_command_sequence.kernel_bins_sizeB > 0) {
-        program_binary_calculator.add_prefetch_paged_to_ringbuffer();
+        uint32_t pcie_alignment =
+            tt::tt_metal::MetalContext::instance().hal().get_alignment(tt::tt_metal::HalMemType::HOST);
+        program_command_sequence.program_binary_setup_prefetcher_cache_command =
+            HostMemDeviceCommand(tt::align(sizeof(CQPrefetchCmd), pcie_alignment));
+        program_command_sequence.kernel_bins_base_addr = program.get_kernels_buffer(device)->address();
     }
     program_binary_command_generator.size_commands(
         device,
@@ -1750,16 +1754,6 @@ void assemble_device_commands(
         program_binary_calculator);
     program_command_sequence.program_binary_command_sequence =
         HostMemDeviceCommand(program_binary_calculator.write_offset_bytes());
-    if (program_command_sequence.kernel_bins_sizeB > 0) {
-        // save the offset in command sequence where to overwrite the right cache setup command tbd
-        program_command_sequence.prefetcher_cache_setup_command_offset =
-            program_command_sequence.program_binary_command_sequence.write_offset_bytes();
-        // below advances the cmd_write_offsetB pointer in program_binary_command_sequence, to leave for the right cache
-        // setup command tbd
-        program_command_sequence.program_binary_command_sequence.add_prefetch_paged_to_ringbuffer(
-            CQPrefetchPagedToRingbufferCmd{});
-        program_command_sequence.kernel_bins_base_addr = program.get_kernels_buffer(device)->address();
-    }
     program_binary_command_generator.assemble_commands(program_command_sequence.program_binary_command_sequence);
     TT_ASSERT(
         program_command_sequence.program_binary_command_sequence.size_bytes() ==
@@ -1896,7 +1890,6 @@ void update_program_dispatch_commands(
     SubDeviceId sub_device_id,
     const ProgramDispatchMetadata& dispatch_md,
     ProgramBinaryStatus program_binary_status,
-    std::pair<bool, uint32_t> prefetcher_caching_info,
     std::pair<bool, int> unicast_go_signal_update) {
     uint32_t i = 0;
     ZoneScopedN("program_loaded_on_device");
@@ -1976,25 +1969,25 @@ void update_program_dispatch_commands(
 
     // Update prefetcher cache initialization
     if (cached_program_command_sequence.kernel_bins_sizeB > 0) {
-        auto is_cached = std::get<0>(prefetcher_caching_info);
-        auto cache_offset = std::get<1>(prefetcher_caching_info);
-        auto cmd_offset = cached_program_command_sequence.prefetcher_cache_setup_command_offset;
+        auto is_cached = dispatch_md.prefetcher_cache_info.is_cached;
+        auto cache_offset = dispatch_md.prefetcher_cache_info.offset;
+        cached_program_command_sequence.program_binary_setup_prefetcher_cache_command.reset_command_offset();
         CQPrefetchCmd cq_prefetch;
         if (is_cached) {
-            // overwrite reseved space with the ringbuffer offset command
-            cq_prefetch.base.cmd_id = CQ_PREFETCH_CMD_SET_RINGBUFFER_OFFSET;
-            cq_prefetch.set_ringbuffer_offset.offset = cache_offset;
+            cached_program_command_sequence.program_binary_setup_prefetcher_cache_command
+                .add_prefetch_set_ringbuffer_offset(cache_offset);
         } else {
-            cq_prefetch.base.cmd_id = CQ_PREFETCH_CMD_PAGED_TO_RINGBUFFER;
-            cq_prefetch.paged_to_ringbuffer = {
-                .flags = uint8_t(cache_offset != 0 ? 0 : CQ_PREFETCH_PAGED_TO_RING_BUFFER_FLAG_RESET_TO_START),
-                .log2_page_size = uint16_t(HostMemDeviceCommand::LOG2_PROGRAM_PAGE_SIZE),
-                .start_page = 0,
-                .base_addr = cached_program_command_sequence.kernel_bins_base_addr,
-                .length = cached_program_command_sequence.kernel_bins_sizeB};
+            cached_program_command_sequence.program_binary_setup_prefetcher_cache_command
+                .add_prefetch_paged_to_ringbuffer(CQPrefetchPagedToRingbufferCmd{
+                    .flags = uint8_t(cache_offset != 0 ? 0 : CQ_PREFETCH_PAGED_TO_RING_BUFFER_FLAG_RESET_TO_START),
+                    .log2_page_size = uint16_t(HostMemDeviceCommand::LOG2_PROGRAM_PAGE_SIZE),
+                    .start_page = 0,
+                    .base_addr = cached_program_command_sequence.kernel_bins_base_addr,
+                    .length = cached_program_command_sequence.kernel_bins_sizeB});
         }
-        cached_program_command_sequence.program_binary_command_sequence.update_cmd_sequence(
-            cmd_offset, &cq_prefetch, sizeof(cq_prefetch));
+        TT_ASSERT(
+            cached_program_command_sequence.program_binary_setup_prefetcher_cache_command.size_bytes() ==
+            cached_program_command_sequence.program_binary_setup_prefetcher_cache_command.write_offset_bytes());
     }
 
     // Update launch messages
@@ -2109,6 +2102,11 @@ void write_program_command_sequence(
     }
 
     // Write the program binary
+    if (program_command_sequence.kernel_bins_sizeB > 0) {
+        write_data_to_cq(
+            program_command_sequence.program_binary_setup_prefetcher_cache_command.data(),
+            program_command_sequence.program_binary_setup_prefetcher_cache_command.size_bytes());
+    }
     write_data_to_cq(
         program_command_sequence.program_binary_command_sequence.data(),
         program_command_sequence.program_binary_command_sequence.size_bytes());

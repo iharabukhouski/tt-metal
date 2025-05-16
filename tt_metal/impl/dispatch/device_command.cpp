@@ -274,7 +274,7 @@ void DeviceCommand<hugepage_write>::add_prefetch_relay_ringbuffer(
     uint32_t num_sub_cmds, const std::vector<CQPrefetchRelayRingbufferSubCmd>& sub_cmds, uint32_t offset_idx) {
     static_assert(sizeof(CQPrefetchRelayRingbufferSubCmd) % sizeof(uint32_t) == 0);
 
-    uint32_t sub_cmds_sizeB = num_sub_cmds * sizeof(CQPrefetchRelayPagedPackedSubCmd);
+    uint32_t sub_cmds_sizeB = num_sub_cmds * sizeof(CQPrefetchRelayRingbufferSubCmd);
     uint32_t increment_sizeB = tt::align(sub_cmds_sizeB + sizeof(CQPrefetchCmd), this->pcie_alignment);
     auto initialize_relay_ringbuffer_cmd = [&](CQPrefetchCmd* relay_ringbuffer_cmd) {
         relay_ringbuffer_cmd->base.cmd_id = CQ_PREFETCH_CMD_RELAY_RINGBUFFER;

@@ -198,6 +198,8 @@ public:
         return cmd;
     }
 
+    void reset_command_offset() { this->cmd_write_offsetB = 0; }
+
 private:
     static bool zero_init_enable;
 

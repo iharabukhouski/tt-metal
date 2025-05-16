@@ -35,10 +35,16 @@ public:
         TT_ASSERT(cache_block_sizeB > 0, "Ringbuffer cache block size must be greater than 0");
         TT_ASSERT(
             cache_manager_initial_entry_size_ > 0,
-            "Ringbuffer cache manager initial entry size must be greater than 0");
+            "Ringbuffer cache manager initial entry size ({}) must be greater than 0 ({}, {})",
+            cache_manager_initial_entry_size_,
+            cache_block_sizeB,
+            cache_size_blocks_);
         TT_ASSERT(
             (cache_manager_initial_entry_size_ & (cache_manager_initial_entry_size_ - 1)) == 0,
-            "Ringbuffer cache manager initial entry size must be a power of 2");
+            "Ringbuffer cache manager initial entry size ({}) is not a power of 2 ({}, {})",
+            cache_manager_initial_entry_size_,
+            cache_block_sizeB,
+            cache_size_blocks_);
     }
     RingbufferCacheManager() = delete;
     RingbufferCacheManager(const RingbufferCacheManager&) = delete;

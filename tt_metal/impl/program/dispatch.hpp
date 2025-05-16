@@ -43,6 +43,11 @@ struct ProgramDispatchMetadata {
     uint32_t sync_count;
     uint32_t stall_first;
     uint32_t stall_before_program;
+
+    struct {
+        bool is_cached;
+        uint32_t offset;
+    } prefetcher_cache_info;
 };
 
 uint32_t configure_rta_offsets_for_kernel_groups(
@@ -117,7 +122,6 @@ void update_program_dispatch_commands(
     SubDeviceId sub_device_id,
     const ProgramDispatchMetadata& dispatch_md,
     ProgramBinaryStatus program_binary_status,
-    std::pair<bool, uint32_t> prefetcher_caching_info = {},
     std::pair<bool, int> unicast_go_signal_update = {false, -1});
 
 void write_program_command_sequence(
