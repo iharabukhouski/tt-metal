@@ -12,7 +12,7 @@ The Allocator maintains a view of on device memory across DRAM and SRAM (i.e. L1
 ## 1. Architecture
 We use a first fit memory algorithm to allow both top-down and bottom-up allocations in the same memory region. Buffers are able to specify whether they should be alloated in lower address space or higher address space. This enables Buffers of the same class to be grouped together without being fragmented by other Buffer classes. For example, user data Buffers are alloated bottom-up in DRAM while Program binaries are allocated top-down to avoid binaries fragmenting user data space. A use case for this in SRAM for L1 Buffers and CircularBuffers is described [below](#4-sram-banks-and-circularbuffers). Based on this, while best fit algorithms reduce fragmentation for Buffers of the same class they don't account for fragmentation caused by mixing different classes.
 
-Note: This hybrid of top-down and bottom-up alloations can also be enabled by dividing up available memory into different memory pools that are located at higher/lower address spaces and then allocating Buffers of a particular class into their associated memory pool. This approach has not been explored in detail and would first require collecting data to appropriately size these memory pools and then consider dynamic resizing.
+Note: This hybrid of top-down and bottom-up allocations can also be enabled by dividing up available memory into different memory pools that are located at higher/lower address spaces and then allocating Buffers of a particular class into their associated memory pool. This approach has not been explored in detail and would first require collecting data to appropriately size these memory pools and then consider dynamic resizing.
 
 ## 2. Memory Banks
 
